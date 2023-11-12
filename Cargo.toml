@@ -1,0 +1,2 @@
+[workspace]
+members = ["xtask", "count-min", "count-min-common"]

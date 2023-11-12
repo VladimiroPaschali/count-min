@@ -1,0 +1,39 @@
+[package]
+name = "count-min-ebpf"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+aya-bpf = { git = "https://github.com/aya-rs/aya" }
+aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
+count-min-common = { path = "../count-min-common" }
+#eht ip tcp udp header
+network-types = "0.0.4"
+#https://docs.rs/count-min-sketch/latest/count_min_sketch/struct.CountMinSketch64.html
+#cant use requires std
+#count-min-sketch = "0.1.7"
+#hashing function no_std
+#rustc-hash = { version = "1.0", default-features = false }
+
+[[bin]]
+name = "count-min"
+path = "src/main.rs"
+
+[profile.dev]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = true
+panic = "abort"
+incremental = false
+codegen-units = 1
+rpath = false
+
+[profile.release]
+lto = true
+panic = "abort"
+codegen-units = 1
+
+[workspace]
+members = []
