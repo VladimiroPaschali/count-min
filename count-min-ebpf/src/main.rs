@@ -70,7 +70,7 @@ impl CountMinSketch {
 #[map]
 static MAPPA: PerCpuHashMap<u32, u32> =
     PerCpuHashMap::<u32, u32>::with_max_entries(1024, 0);//flag 0 = none 1=by name
-static A1: PerCpuArray::<u32> = PerCpuArray::<u32>::with_max_entries(1024,0);
+//static A1: PerCpuArray::<u32> = PerCpuArray::<u32>::with_max_entries(1024,0);
 
 #[xdp]
 pub fn count_min(ctx: XdpContext) -> u32 {
@@ -152,7 +152,7 @@ fn try_count_min(ctx: XdpContext) -> Result<u32,()> {
     let _ = MAPPA.insert(&proto, &prova, 0);
 
     
-    let val = unsafe {A1.get_ptr_mut(1)};
+    //let val = unsafe {A1.get_ptr_mut(1)};
     //let prova = val.unwrap_or(0 as *mut u32);
     //unsafe { *prova+=1};
     
