@@ -5,7 +5,10 @@ edition = "2021"
 
 [dependencies]
 aya-bpf = { git = "https://github.com/aya-rs/aya" }
+# aya-bpf = { git = "https://github.com/VladimiroPaschali/aya.git" }
+#aya-bpf = { git = "https://github.com/dave-tucker/aya.git", branch = "hashofhashmaps"}
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
+# aya-log-ebpf = { git = "https://github.com/VladimiroPaschali/aya.git" }
 count-min-common = { path = "../count-min-common" }
 #eht ip tcp udp header
 network-types = "0.0.4"

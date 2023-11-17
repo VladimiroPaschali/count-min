@@ -1,7 +1,7 @@
 use anyhow::Context;
 use aya::{
     include_bytes_aligned,
-    maps::{PerCpuHashMap,PerCpuArray},
+    maps::PerCpuArray,
     programs::{Xdp, XdpFlags},
     Bpf
 };
@@ -51,11 +51,23 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     let program: &mut Xdp = bpf.program_mut("count_min").unwrap().try_into()?;
     program.load()?;
-    program.attach(&opt.iface, XdpFlags::default())
+    program.attach(&opt.iface, XdpFlags::SKB_MODE)
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
+    
+    //numarr[0] = number of array in cms
+    /*let mut numarr : Array<_,u32> = Array::try_from(bpf.map_mut("NUMARR").unwrap())?;
+    numarr.set(0, 4, 0);*/
+
+    let row1: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("ROW1").unwrap())?;
+    let row2: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("ROW2").unwrap())?;
+    let row3: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("ROW3").unwrap())?;
+
+
+
+
 
     //reference alle mappe kernel
-    let mappa: PerCpuHashMap<_, u32, u32> = PerCpuHashMap::try_from(bpf.map_mut("MAPPA").unwrap())?;
+    // let mappa: PerCpuHashMap<_, u32, u32> = PerCpuHashMap::try_from(bpf.map_mut("MAPPA").unwrap())?;
     //let a1: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("A1").unwrap())?;
     
 
@@ -63,16 +75,16 @@ async fn main() -> Result<(), anyhow::Error> {
     signal::ctrl_c().await?;
     
     //stampa i valori di ogni mappa.get(6)
-    const PROTO: u32 = 6;
-    let proto =  mappa.get(&PROTO, 0)?;
-    let mut thread = 0;
-    let mut tot = 0;
-    for proto in proto.iter() {
-        println!("Thread {} ha letto {} pacchetti", thread, proto);
-        thread+=1;
-        tot+=proto;
-    }
-    print!("Totale pacchetti con protocollo {} = {}\n",PROTO,tot);
+    // const PROTO: u32 = 6;
+    // let proto =  mappa.get(&PROTO, 0)?;
+    // let mut thread = 0;
+    // let mut tot = 0;
+    // for proto in proto.iter() {
+    //     println!("Thread {} ha letto {} pacchetti", thread, proto);
+    //     thread+=1;
+    //     tot+=proto;
+    // }
+    // print!("Totale pacchetti con protocollo {} = {}\n",PROTO,tot);
     //definizione va fatta dopo la fine del primo mut (hashmap)
     /*let a1: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("A1").unwrap())?;
 
