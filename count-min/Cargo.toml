@@ -6,10 +6,7 @@ publish = false
 
 [dependencies]
 aya = { git = "https://github.com/aya-rs/aya", features = ["async_tokio"] }
-# aya = { git = "https://github.com/VladimiroPaschali/aya.git", features = ["async_tokio"] }
-#aya = { git = "https://github.com/dave-tucker/aya.git", branch = "hashofhashmaps", features = ["async_tokio"] }
 aya-log = { git = "https://github.com/aya-rs/aya" }
-# aya-log = { git = "https://github.com/VladimiroPaschali/aya.git" }
 clap = { version = "4.1", features = ["derive"] }
 count-min-common = { path = "../count-min-common", features = ["user"] }
 anyhow = "1"
@@ -17,7 +14,9 @@ env_logger = "0.10"
 libc = "0.2"
 log = "0.4"
 tokio = { version = "1.25", features = ["macros", "rt", "rt-multi-thread", "net", "signal"] }
-
+[dependencies.xxhash-rust]
+version = "0.8.7"
+features = ["xxh32", "const_xxh32"] 
 [[bin]]
 name = "count-min"
 path = "src/main.rs"

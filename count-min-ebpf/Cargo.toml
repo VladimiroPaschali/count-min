@@ -5,18 +5,16 @@ edition = "2021"
 
 [dependencies]
 aya-bpf = { git = "https://github.com/aya-rs/aya" }
-# aya-bpf = { git = "https://github.com/VladimiroPaschali/aya.git" }
-#aya-bpf = { git = "https://github.com/dave-tucker/aya.git", branch = "hashofhashmaps"}
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
-# aya-log-ebpf = { git = "https://github.com/VladimiroPaschali/aya.git" }
 count-min-common = { path = "../count-min-common" }
-#eht ip tcp udp header
 network-types = "0.0.4"
-#https://docs.rs/count-min-sketch/latest/count_min_sketch/struct.CountMinSketch64.html
-#cant use requires std
-#count-min-sketch = "0.1.7"
-#hashing function no_std
-#rustc-hash = { version = "1.0", default-features = false }
+# xxhash-rust = "0.8.7"
+[dependencies.xxhash-rust]
+version = "0.8.7"
+features = ["xxh32", "const_xxh32"]
+# [dependencies.xxhash-rust]
+# version = "0.8.5"
+# features = ["xxh3", "const_xxh3"]
 
 [[bin]]
 name = "count-min"

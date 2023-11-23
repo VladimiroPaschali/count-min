@@ -1,20 +1,40 @@
 use anyhow::Context;
-use aya::{
-    include_bytes_aligned,
-    maps::PerCpuArray,
-    programs::{Xdp, XdpFlags},
-    Bpf
-};
-use aya_log::BpfLogger;
+use aya::maps::PerCpuArray;
+use aya::programs::{Xdp, XdpFlags};
+use aya::{include_bytes_aligned, Bpf, Pod};
+use aya_log::{BpfLogger, Ipv4Formatter};
 use clap::Parser;
 use log::{info, warn, debug};
 use tokio::signal;
+use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
+use xxhash_rust::xxh32::xxh32;
+use core::u32::MAX;
+use std::net::{Ipv4Addr, IpAddr};
 
 #[derive(Debug, Parser)]
 struct Opt {
     #[clap(short, long, default_value = "eth0")]
     iface: String,
 }
+const CMS_SIZE:u32 = 1024;
+const CMS_ROWS:u32 = 4;
+#[derive(Clone, Copy)]
+pub struct Cms {
+    cms: [[u32; CMS_SIZE as usize]; CMS_ROWS as usize], 
+}
+//ci sarebbe la macro in aya::bpf
+unsafe impl Pod for Cms{}
+
+#[derive(Clone, Copy,Default)]
+pub struct Pacchetto{
+    source_addr:u32,
+    dest_addr: u32,
+    source_port:u16,
+    dest_port:u16,
+    proto:u8
+}
+unsafe impl Pod for Pacchetto{}
+
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -51,51 +71,71 @@ async fn main() -> Result<(), anyhow::Error> {
     }
     let program: &mut Xdp = bpf.program_mut("count_min").unwrap().try_into()?;
     program.load()?;
-    program.attach(&opt.iface, XdpFlags::SKB_MODE)
+    program.attach(&opt.iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
-    
-    //numarr[0] = number of array in cms
-    /*let mut numarr : Array<_,u32> = Array::try_from(bpf.map_mut("NUMARR").unwrap())?;
-    numarr.set(0, 4, 0);*/
-
-    let row1: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("ROW1").unwrap())?;
-    let row2: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("ROW2").unwrap())?;
-    let row3: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("ROW3").unwrap())?;
 
 
-
-
-
-    //reference alle mappe kernel
-    // let mappa: PerCpuHashMap<_, u32, u32> = PerCpuHashMap::try_from(bpf.map_mut("MAPPA").unwrap())?;
-    //let a1: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("A1").unwrap())?;
-    
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
-    
-    //stampa i valori di ogni mappa.get(6)
-    // const PROTO: u32 = 6;
-    // let proto =  mappa.get(&PROTO, 0)?;
-    // let mut thread = 0;
-    // let mut tot = 0;
-    // for proto in proto.iter() {
-    //     println!("Thread {} ha letto {} pacchetti", thread, proto);
-    //     thread+=1;
-    //     tot+=proto;
-    // }
-    // print!("Totale pacchetti con protocollo {} = {}\n",PROTO,tot);
-    //definizione va fatta dopo la fine del primo mut (hashmap)
-    /*let a1: PerCpuArray<_,u32> = PerCpuArray::try_from(bpf.map_mut("A1").unwrap())?;
 
-    //stampa da array a1
-    
-    let nr_cpus= nr_cpus()?;
-    let val = a1.get(&0,0)?;//index 0 flag 0
-    for cpu_val in val.iter() {
-        print!("{}",cpu_val)
+    //mappa kernel cms [CMS_ROWS][CMS_SIZE]
+    let cms_array: PerCpuArray<_,Cms> = PerCpuArray::try_from(bpf.map_mut("CMS_ARRAY").unwrap())?;
+    //allcms = collection of cmss from each core
+    let allcms = cms_array.get(&0, 0)?;//index 0 flag 0
+
+    //legge ultimo pkt convertito da convert_key_tuple_to_array
+    let converted_key_arr: PerCpuArray<_,[u8;13]> = PerCpuArray::try_from(bpf.map_mut("CONVERTED_KEY").unwrap())?;
+    let pkts = converted_key_arr.get(&0,0)?;
+    let mut converted_key :[u8;13] = Default::default();
+
+    for cpu_pkt in pkts.iter(){
+        if converted_key[0]==0{
+            converted_key = *cpu_pkt;
+        }
     }
-    */
+
+    //legge l'ultimo pacchetto, probabilmente lo stesso ma salvato come struct Pacchetto
+    let ultimo_pkt: PerCpuArray<_,Pacchetto> = PerCpuArray::try_from(bpf.map_mut("ULTIMO_PKT").unwrap())?;
+    let ultimo_pkts = ultimo_pkt.get(&0, 0)?;
+    let mut pkt:Pacchetto = Default::default();
+
+    for cpu_pkt in ultimo_pkts.iter(){
+        if pkt.source_addr==0{
+            pkt = *cpu_pkt;
+        }
+    }
+
+    print!("\n");
+    print!("Pacchetto : ");
+    print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
+
+    let mut hash :u32 = 0;
+    let mut index : u32 = 0;
+    let mut min: u32 = MAX;
+    for i in 0..CMS_ROWS{
+        if i ==0{
+            hash = xxh32(&converted_key,42);
+        }else {
+            hash = xxh32(&hash.to_ne_bytes(),42);
+        }
+        index = hash%CMS_SIZE;
+        print!("Row = {} Hash = {} Index = {}\n", i, hash,index);
+
+        let mut thread = 0;
+
+        for cpu_cms in allcms.iter(){
+            let mut val = cpu_cms.cms[i as usize][index as usize];
+            if val < min && val != 0{
+                min = val;
+            }
+            println!("Thread n: {} value = {}",thread,val);
+            thread +=1;
+        }
+
+    }
+
+    print!("Il minimo è {}\n", min);
     
 
     info!("Exiting...");

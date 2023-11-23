@@ -5,10 +5,11 @@ use aya_bpf::{
     macros::{map,xdp},
     maps::PerCpuArray,
     programs::XdpContext,
+    bpf_printk
 };
 use aya_log_ebpf::info;
 
-use core::{mem, u32};
+use core::{mem::{self, transmute}, u32, hash};
 use network_types::{
     eth::{EthHdr, EtherType},
     ip::{IpProto, Ipv4Hdr},
@@ -16,36 +17,34 @@ use network_types::{
     udp::UdpHdr,
 };
 
+use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
+use xxhash_rust::xxh32::xxh32;
 
-use core::hash::{Hash, Hasher};
-
-//non riesco a passarli dallo user side
 const CMS_SIZE:u32 = 1024;
 const CMS_ROWS:u32 = 4;
+#[derive(Clone, Copy)]
+pub struct Cms {
+    cms: [[u32; CMS_SIZE as usize]; CMS_ROWS as usize], 
+}
+//let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
+#[derive(Clone, Copy)]
+pub struct Pacchetto{
+    source_addr:u32,
+    dest_addr: u32,
+    source_port:u16,
+    dest_port:u16,
+    proto:u8
+}
 
 #[map]
-static ROW1 : PerCpuArray::<u32> = PerCpuArray::<u32>::with_max_entries(CMS_SIZE, 0);
+static CMS_ARRAY: PerCpuArray::<Cms> = PerCpuArray::<Cms>::with_max_entries(1, 0);
+
 #[map]
-static ROW2 : PerCpuArray::<u32> = PerCpuArray::<u32>::with_max_entries(CMS_SIZE, 0);
+static CONVERTED_KEY: PerCpuArray::<[u8;13]> = PerCpuArray::<[u8;13]>::with_max_entries(1, 0);
+
 #[map]
-static ROW3 : PerCpuArray::<u32> = PerCpuArray::<u32>::with_max_entries(CMS_SIZE, 0);
-// #[map]
-//static ROW4 : PerCpuArray::<u32> = PerCpuArray::<u32>::with_max_entries(CMS_SIZE, 0);
+static ULTIMO_PKT: PerCpuArray::<Pacchetto> = PerCpuArray::<Pacchetto>::with_max_entries(1, 0);
 
-//NUMARR[0] = CMS_ROWS = 4
-/*#[map]
-static NUMARR: Array::<u32> = Array::<u32>::with_max_entries(1, 0);
-
-//static  CMS_ROW_SIZE :u32 = *NUMARR.get(0).unwrap(); 
-bpf_printk!(b"CMS_SIZE %d",CMS_SIZE);
-*/
-
-// #[map]
-// static MAPPA: PerCpuHashMap<u32, u32> =
-//     PerCpuHashMap::<u32, u32>::with_max_entries(1024, 0);//flag 0 = none 1=by name
-// #[map]
-// static ARRAY: PerCpuArray::<u32> = PerCpuArray::<u32>::with_max_entries(CMS_SIZE,0);
-//static ARRAY: PerCpuArray::<PerCpuHashMap<u32,u32>> = PerCpuArray::<PerCpuHashMap<u32,u32>>::with_max_entries_array_of_maps(CMS_ROW_SIZE,0);
 
 fn convert_key_tuple_to_array(key_tuple: (u32, u32, u16, u16, u8)) -> [u8; 13] {
    let mut arr = [0; 13];
@@ -70,46 +69,6 @@ fn convert_key_tuple_to_array(key_tuple: (u32, u32, u16, u16, u8)) -> [u8; 13] {
    return arr;
 } 
 
-//djbw
-fn my_hash1(string: [u8; 13]) -> u32 { 
-    let mut init = 5381u32;
-    let mut c: u8;
-
-    for i in 0..13{
-            c = string[i as usize];
-            init = ((init << 5) + init) + (c as u32);
-            //per leggere printk
-            //sudo cat /sys/kernel/debug/tracing/trace_pipe
-            //unsafe{bpf_printk!(b"for loop %d",i)};
-    }
-    return init;
-}
-
-//sdbm
-fn my_hash2(string: [u8; 13]) -> u32 { 
-    let mut init = 0u32;
-    let mut c:u8;
-
-    for i in 0..13{
-        c = string[i as usize];
-        init = (c as u32)+(init<<6)+(init<<16)-init;
-    }
-    return init;
-}
-
-//lose lose
-fn my_hash3(string: [u8; 13]) -> u32 { 
-    let mut init = 0u32;
-    let mut c:u8;
-
-    for i in 0..13{
-        c = string[i as usize];
-        init += c as u32;
-    }
-    return init;
-}
-
-
 
 #[xdp]
 pub fn count_min(ctx: XdpContext) -> u32 {
@@ -132,7 +91,7 @@ fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
     Ok((start + offset) as *const T)
 }
 
-fn try_count_min(ctx: XdpContext) -> Result<u32,()> {
+fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
     //pointer to the beginning of the ethhdr
     //ctx pointer to the packet
     let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?; 
@@ -178,59 +137,51 @@ fn try_count_min(ctx: XdpContext) -> Result<u32,()> {
         _ => return Err(()),
     };
 
-    //print
-    info!(&ctx, "SRC IP: {:i}, SRC PORT: {}, PROTO: {}, DST IP: {:i}, DST PORT : {}", source_addr, source_port, proto, dest_addr, dest_port);
+   info!(&ctx, "SRC IP: {:i}, SRC PORT: {}, PROTO: {}, DST IP: {:i}, DST PORT : {}", source_addr, source_port, proto, dest_addr, dest_port);
 
-    let key_ip = (source_addr,dest_addr,source_port,dest_port,proto as u8);
+    let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
     let converted_key = convert_key_tuple_to_array(key_ip);
 
-    //insert into row1
-    let hash = my_hash1(converted_key);
-    let index = hash%CMS_SIZE;
-    info!(&ctx, "Row 1: Hash = {} Index = {}",hash,index);
-
-    let point = ROW1.get_ptr_mut(index);
-    if point.is_some(){
-        //info!(&ctx,"If Row 1");
-        let num = point.unwrap_or(0 as *mut u32);
-        unsafe{*num+=1}
-        info!(&ctx, "Row 1: Num = {}",unsafe{*num});
+    //inserisci in ultimpo pkt per leggere l'hash user side
+    if let Some(arr) = CONVERTED_KEY.get_ptr_mut(0){
+        unsafe{*arr=converted_key}
     }else {
-        info!(&ctx,"Else Row 1");
+        info!(&ctx,"Else CONVERTED_KEY");
     }
 
-    //insert into row2
-    let hash = my_hash2(converted_key);
-    let index = hash%CMS_SIZE;
-    info!(&ctx, "Row 2: Hash = {} Index = {}",hash,index);
-
-    let point = ROW2.get_ptr_mut(index);
-    if point.is_some(){
-        //info!(&ctx,"If Row 2");
-        let num = point.unwrap_or(0 as *mut u32);
-        unsafe{*num+=1}
-        info!(&ctx, "Row 2: Num = {}",unsafe{*num});
+    if let Some(arr) = ULTIMO_PKT.get_ptr_mut(0){
+        unsafe{
+            (*(arr)).source_addr = source_addr;
+            (*(arr)).dest_addr = dest_addr;
+            (*(arr)).source_port = source_port;
+            (*(arr)).dest_port=dest_port;
+            (*(arr)).proto = proto as u8;
+        }
     }else {
-        info!(&ctx,"Else Row 2");
+        info!(&ctx,"Else ULTIMO_PKT");
     }
 
-    //insert into row3
-    let hash = my_hash3(converted_key);
-    let index = hash%CMS_SIZE;
-    info!(&ctx, "Row 3: Hash = {} Index = {}",hash,index);
+    let mut hash :u32 = 0;
+    let mut index : u32 = 0;
 
-    let point = ROW3.get_ptr_mut(index);
-    if point.is_some(){
-        //info!(&ctx,"If Row 3");
-        let num = point.unwrap_or(0 as *mut u32);
-        unsafe{*num+=1}
-        info!(&ctx, "Row 3: Num = {}",unsafe{*num});
-    }else {
-        info!(&ctx,"Else Row 3");
+    for i in 0..CMS_ROWS{
+        if i == 0{
+            hash = xxh32(&converted_key,42);
+        }else {
+            //to_ne_bytes converts from u32 to [u8]
+            hash = xxh32(&hash.to_ne_bytes(), 42);
+        }
+        index = hash%CMS_SIZE;
+
+        if let Some(arr) = CMS_ARRAY.get_ptr_mut(0) {
+            unsafe {(*arr).cms[i as usize][index as usize] += 1}
+            info!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, unsafe{(*arr).cms[i as usize][index as usize]} )
+        }else {
+            info!(&ctx,"Else cms_array");
+        }
+
+
     }
-       
-    
- 
 
     Ok(xdp_action::XDP_PASS)
 }

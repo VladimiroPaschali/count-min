@@ -1,5 +1,7 @@
 # count-min
 
+one array of size one with an array of arrays inside
+
 ## Prerequisites
 
 1. Install bpf-linker: `cargo install bpf-linker`
