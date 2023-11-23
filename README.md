@@ -1,6 +1,6 @@
 # count-min
 
-one array of size one with an array of arrays inside
+one array of size one with an array of arrays inside 
 
 ## Prerequisites
 
