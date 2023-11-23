@@ -11,6 +11,7 @@ use xxhash_rust::xxh32::xxh32;
 use core::u32::MAX;
 use std::net::{Ipv4Addr, IpAddr};
 
+
 #[derive(Debug, Parser)]
 struct Opt {
     #[clap(short, long, default_value = "eth0")]

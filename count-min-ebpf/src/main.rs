@@ -26,6 +26,7 @@ const CMS_ROWS:u32 = 4;
 pub struct Cms {
     cms: [[u32; CMS_SIZE as usize]; CMS_ROWS as usize], 
 }
+
 //let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
 #[derive(Clone, Copy)]
 pub struct Pacchetto{

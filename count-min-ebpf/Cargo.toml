@@ -8,13 +8,9 @@ aya-bpf = { git = "https://github.com/aya-rs/aya" }
 aya-log-ebpf = { git = "https://github.com/aya-rs/aya" }
 count-min-common = { path = "../count-min-common" }
 network-types = "0.0.4"
-# xxhash-rust = "0.8.7"
 [dependencies.xxhash-rust]
 version = "0.8.7"
 features = ["xxh32", "const_xxh32"]
-# [dependencies.xxhash-rust]
-# version = "0.8.5"
-# features = ["xxh3", "const_xxh3"]
 
 [[bin]]
 name = "count-min"
