@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 use aya_bpf::{
-    bindings::xdp_action,
+    bindings::{xdp_action, bpf_attach_type::BPF_MODIFY_RETURN},
     macros::{map,xdp},
-    maps::PerCpuArray,
+    maps::{PerCpuArray,PerCpuHashMap,Array},
     programs::XdpContext,
     bpf_printk
 };
@@ -21,10 +21,13 @@ use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
 use xxhash_rust::xxh32::xxh32;
 
 const CMS_SIZE:u32 = 1024;
-const CMS_ROWS:u32 = 4;
+//const CMS_ROWS:u32 = 4;
+//updated from value from metadata[0] set in userside
+//static mut CMS_ROWS:u32 = 1;
+
 #[derive(Clone, Copy)]
-pub struct Cms {
-    cms: [[u32; CMS_SIZE as usize]; CMS_ROWS as usize], 
+struct CmsRow {
+    row: [u32; CMS_SIZE as usize],
 }
 
 //let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
@@ -38,7 +41,12 @@ pub struct Pacchetto{
 }
 
 #[map]
-static CMS_ARRAY: PerCpuArray::<Cms> = PerCpuArray::<Cms>::with_max_entries(1, 0);
+//metadata[0] = number of rows crated by user
+static METADATA: Array::<u32> = Array::<u32>::with_max_entries(10, 0);
+
+#[map]
+//the number of rows is user definable, the map can have a max of 1024 rows
+static CMS_MAP: PerCpuHashMap::<u32,CmsRow> = PerCpuHashMap::<u32,CmsRow>::with_max_entries(CMS_SIZE, 0);
 
 #[map]
 static CONVERTED_KEY: PerCpuArray::<[u8;13]> = PerCpuArray::<[u8;13]>::with_max_entries(1, 0);
@@ -103,6 +111,8 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         _ => return Ok(xdp_action::XDP_PASS),
     }
 
+    //start packet parsing
+
     let ipv4hdr: *const Ipv4Hdr = ptr_at(&ctx, EthHdr::LEN)?;
     let source_addr: u32 = u32::from_be(unsafe { (*ipv4hdr).src_addr });
     let dest_addr: u32 = u32::from_be(unsafe { (*ipv4hdr).dst_addr });
@@ -143,6 +153,8 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
     let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
     let converted_key = convert_key_tuple_to_array(key_ip);
 
+    //end of packet parsing
+
     //inserisci in ultimpo pkt per leggere l'hash user side
     if let Some(arr) = CONVERTED_KEY.get_ptr_mut(0){
         unsafe{*arr=converted_key}
@@ -162,10 +174,37 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         info!(&ctx,"Else ULTIMO_PKT");
     }
 
+    // let cms_rows: u32 = *METADATA.get(0).unwrap_or(&0);
+    // unsafe { CMS_ROWS = *METADATA.get(0).unwrap_or(&2) };
+
+    //non riesco a leggere metadata
+    let mut cms_rows: u32 = 4;
+
+    //let mut cms_rows = *METADATA.get(0).unwrap();
+    //cms_rows = cms_rows.get_or_insert(1);
+
+
+    // unsafe{bpf_printk!(b"cmsrows 1  %d" , cms_rows)};
+    // if cms_rows == 0{
+    //     cms_rows =1;
+    // }
+    // cms_rows =1;
+    // unsafe{bpf_printk!(b"cmsrows 2  %d" , cms_rows)};
+
+    // if let Some(cms_row) = METADATA.get_ptr(0){
+        
+    // }
+    // let cms_rows_p = METADATA.get_ptr(0);
+    // if cms_rows_p.is_some(){
+
+    // }
+
+
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
 
-    for i in 0..CMS_ROWS{
+    for i in 0..cms_rows {
+        //info!(&ctx,"iiiiiiiiiii {}",i);
         if i == 0{
             hash = xxh32(&converted_key,42);
         }else {
@@ -174,11 +213,15 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         }
         index = hash%CMS_SIZE;
 
-        if let Some(arr) = CMS_ARRAY.get_ptr_mut(0) {
-            unsafe {(*arr).cms[i as usize][index as usize] += 1}
-            info!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, unsafe{(*arr).cms[i as usize][index as usize]} )
+        if let Some(arr) = CMS_MAP.get_ptr_mut(&i) {
+            unsafe {(*arr).row[index as usize] += 1}
+            info!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, unsafe{(*arr).row[index as usize]} )
         }else {
-            info!(&ctx,"Else cms_array");
+            //stack limit exceeded
+            // let mut riga  = CmsRow{row :[0;CMS_SIZE as usize]};
+            // riga.row[index as usize]=1;
+            // CMS_MAP.insert(&i, &riga, 0);
+            info!(&ctx,"Else CMS_MAP");
         }
 
 

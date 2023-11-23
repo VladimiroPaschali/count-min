@@ -1,7 +1,8 @@
 use anyhow::Context;
-use aya::maps::PerCpuArray;
+use aya::maps::{PerCpuHashMap,PerCpuArray,Array, PerCpuValues};
 use aya::programs::{Xdp, XdpFlags};
 use aya::{include_bytes_aligned, Bpf, Pod};
+use aya::util::nr_cpus;
 use aya_log::{BpfLogger, Ipv4Formatter};
 use clap::Parser;
 use log::{info, warn, debug};
@@ -20,11 +21,12 @@ struct Opt {
 const CMS_SIZE:u32 = 1024;
 const CMS_ROWS:u32 = 4;
 #[derive(Clone, Copy)]
-pub struct Cms {
-    cms: [[u32; CMS_SIZE as usize]; CMS_ROWS as usize], 
+struct CmsRow {
+    row: [u32; CMS_SIZE as usize],
 }
 //ci sarebbe la macro in aya::bpf
-unsafe impl Pod for Cms{}
+unsafe impl Pod for CmsRow{}
+
 
 #[derive(Clone, Copy,Default)]
 pub struct Pacchetto{
@@ -54,6 +56,8 @@ async fn main() -> Result<(), anyhow::Error> {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
 
+
+
     // This will include your eBPF object file as raw bytes at compile-time and load it at
     // runtime. This approach is recommended for most real-world use cases. If you would
     // like to specify the eBPF program at runtime rather than at compile-time, you can
@@ -75,15 +79,28 @@ async fn main() -> Result<(), anyhow::Error> {
     program.attach(&opt.iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
+    let  mut metadata: Array<_,u32> = Array::try_from(bpf.map_mut("METADATA").unwrap())?;
+    metadata.set(0,CMS_ROWS,0)?;
 
+    //mappa kernel row [CMS_SIZE]
+    let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+    //cms_map.insert()
+    //o inizializzo le righe lato user o lato kernel
+    //for loop i in rows
+    for i in 0..CMS_ROWS{
+        let _=cms_map.insert(
+            i,
+            // PerCpuValues::try_from(CmsRow{row:[0;CMS_SIZE as usize]}),
+            PerCpuValues::try_from(vec![CmsRow{row:[0;CMS_SIZE as usize]};nr_cpus()?])?,
+            0
+        );
+    }
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
 
-    //mappa kernel cms [CMS_ROWS][CMS_SIZE]
-    let cms_array: PerCpuArray<_,Cms> = PerCpuArray::try_from(bpf.map_mut("CMS_ARRAY").unwrap())?;
     //allcms = collection of cmss from each core
-    let allcms = cms_array.get(&0, 0)?;//index 0 flag 0
+    //let allcms = cms_array.get(&0, 0)?;//index 0 flag 0
 
     //legge ultimo pkt convertito da convert_key_tuple_to_array
     let converted_key_arr: PerCpuArray<_,[u8;13]> = PerCpuArray::try_from(bpf.map_mut("CONVERTED_KEY").unwrap())?;
@@ -111,6 +128,8 @@ async fn main() -> Result<(), anyhow::Error> {
     print!("Pacchetto : ");
     print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
 
+    let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
     let mut min: u32 = MAX;
@@ -123,15 +142,19 @@ async fn main() -> Result<(), anyhow::Error> {
         index = hash%CMS_SIZE;
         print!("Row = {} Hash = {} Index = {}\n", i, hash,index);
 
-        let mut thread = 0;
+        //let mut thread = 0;
 
-        for cpu_cms in allcms.iter(){
-            let mut val = cpu_cms.cms[i as usize][index as usize];
+        let riga = cms_map.get(&i,0)?;
+
+        for cpu_cms in riga.iter(){
+            let val = cpu_cms.row[index as usize];
+            //println!("{}",val);
+            // let mut val = cpu_cms.row[i as usize][index as usize];
             if val < min && val != 0{
                 min = val;
             }
-            println!("Thread n: {} value = {}",thread,val);
-            thread +=1;
+            //println!("Thread n: {} value = {}",thread,val);
+            //thread +=1;
         }
 
     }
