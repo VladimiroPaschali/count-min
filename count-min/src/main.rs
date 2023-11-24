@@ -38,6 +38,29 @@ pub struct Pacchetto{
 }
 unsafe impl Pod for Pacchetto{}
 
+fn convert_key_tuple_to_array(key_tuple: (u32, u32, u16, u16, u8)) -> [u8; 13] {
+    let mut arr = [0; 13];
+    // src IP
+    arr[0] = (key_tuple.0 & 0xFF) as u8;
+    arr[1] = (key_tuple.0 >> 8 & 0xFF) as u8;
+    arr[2] = (key_tuple.0 >> 16 & 0xFF) as u8;
+    arr[3] = (key_tuple.0 >> 24 & 0xFF) as u8;
+    // dst IP
+    arr[4] = (key_tuple.1 & 0xFF) as u8;
+    arr[5] = (key_tuple.1 >> 8 & 0xFF) as u8;
+    arr[6] = (key_tuple.1 >> 16 & 0xFF) as u8;
+    arr[7] = (key_tuple.1 >> 24 & 0xFF) as u8;
+    // src port
+    arr[8] = (key_tuple.2 & 0xFF) as u8;
+    arr[9] = (key_tuple.2 >> 8 & 0xFF) as u8;
+    // dst port
+    arr[10] = (key_tuple.3  & 0xFF) as u8;
+    arr[11] = (key_tuple.3 >> 8 & 0xFF) as u8;
+    // proto
+    arr[12] = key_tuple.4;
+    return arr;
+ } 
+
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -84,8 +107,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
     //mappa kernel row [CMS_SIZE]
     let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
-    //cms_map.insert()
-    //o inizializzo le righe lato user o lato kernel
+    //inizializzo le righe lato user
     //for loop i in rows
     for i in 0..CMS_ROWS{
         let _=cms_map.insert(
@@ -99,9 +121,6 @@ async fn main() -> Result<(), anyhow::Error> {
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
 
-    //allcms = collection of cmss from each core
-    //let allcms = cms_array.get(&0, 0)?;//index 0 flag 0
-
     //legge ultimo pkt convertito da convert_key_tuple_to_array
     let converted_key_arr: PerCpuArray<_,[u8;13]> = PerCpuArray::try_from(bpf.map_mut("CONVERTED_KEY").unwrap())?;
     let pkts = converted_key_arr.get(&0,0)?;
@@ -113,20 +132,34 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     }
 
-    //legge l'ultimo pacchetto, probabilmente lo stesso ma salvato come struct Pacchetto
-    let ultimo_pkt: PerCpuArray<_,Pacchetto> = PerCpuArray::try_from(bpf.map_mut("ULTIMO_PKT").unwrap())?;
-    let ultimo_pkts = ultimo_pkt.get(&0, 0)?;
-    let mut pkt:Pacchetto = Default::default();
+    // //legge l'ultimo pacchetto, probabilmente lo stesso ma salvato come struct Pacchetto
+    // let ultimo_pkt: PerCpuArray<_,Pacchetto> = PerCpuArray::try_from(bpf.map_mut("ULTIMO_PKT").unwrap())?;
+    // let ultimo_pkts = ultimo_pkt.get(&0, 0)?;
+    // let mut pkt:Pacchetto = Default::default();
 
-    for cpu_pkt in ultimo_pkts.iter(){
-        if pkt.source_addr==0{
-            pkt = *cpu_pkt;
-        }
-    }
+    // for cpu_pkt in ultimo_pkts.iter(){
+    //     if pkt.source_addr==0{
+    //         pkt = *cpu_pkt;
+    //     }
+    // }
 
+    // print!("\n");
+    // print!("Pacchetto : ");
+    // print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
+
+
+    //o usa l'ultimo pacchetto o un pacchetto passato manualmente
+    //pacchetto passato manualmente
+    
+    /////////let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
+    let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(203, 178, 142, 200).into(),Ipv4Addr::new(172, 25, 153, 123).into(),80,60972,6);
+    let converted_key = convert_key_tuple_to_array(key_ip);
     print!("\n");
     print!("Pacchetto : ");
-    print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
+    print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", key_ip.0, key_ip.2, key_ip.4, key_ip.1, key_ip.3);
+
+
+
 
     let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
 
