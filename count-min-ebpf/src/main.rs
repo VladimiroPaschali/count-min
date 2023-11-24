@@ -20,10 +20,16 @@ use network_types::{
 use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
 use xxhash_rust::xxh32::xxh32;
 
-const CMS_SIZE:u32 = 1024;
-const CMS_ROWS:u32 = 4;
+const CMS_ENTRY_LIMIT: u32 =  100000;
 //updated from value from metadata[0] set in userside
 //static mut CMS_ROWS:u32 = 1;
+//
+
+#[no_mangle]
+static CMS_ROWS: u32 = 1;
+
+#[no_mangle]
+static CMS_SIZE: u32 = 1;
 
 #[derive(Clone, Copy)]
 struct Cms {
@@ -47,7 +53,7 @@ static METADATA: Array::<u32> = Array::<u32>::with_max_entries(10, 0);
 
 #[map]
 //(row,index) = value both row and index are user definable, the map can have a max of 1024 rows
-static CMS_MAP: PerCpuHashMap::<Cms,u32> = PerCpuHashMap::<Cms,u32>::with_max_entries(CMS_SIZE, 0);
+static CMS_MAP: PerCpuHashMap::<Cms,u32> = PerCpuHashMap::<Cms,u32>::with_max_entries(CMS_ENTRY_LIMIT, 0);
 
 #[map]
 static CONVERTED_KEY: PerCpuArray::<[u8;13]> = PerCpuArray::<[u8;13]>::with_max_entries(1, 0);
@@ -104,6 +110,8 @@ fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
     //pointer to the beginning of the ethhdr
     //ctx pointer to the packet
+    let cms_rows = unsafe {core::ptr::read_volatile(&CMS_ROWS)};
+    let cms_size = unsafe {core::ptr::read_volatile(&CMS_SIZE)};
     let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?; 
 
     //if not ipv4 pass and exit
@@ -149,6 +157,7 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         _ => return Err(()),
     };
 
+    info!(&ctx, "CMS_ROWS: {} CMS_SIZE: {}", cms_rows, cms_size);
    info!(&ctx, "SRC IP: {:i}, SRC PORT: {}, PROTO: {}, DST IP: {:i}, DST PORT : {}", source_addr, source_port, proto, dest_addr, dest_port);
 
     let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
@@ -178,7 +187,7 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
 
-    for i in 0..CMS_ROWS {
+    for i in 0..cms_rows{
         //info!(&ctx,"iiiiiiiiiii {}",i);
         if i == 0{
             hash = xxh32(&converted_key,42);
@@ -186,7 +195,7 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
             //to_ne_bytes converts from u32 to [u8]
             hash = xxh32(&hash.to_ne_bytes(), 42);
         }
-        index = hash%CMS_SIZE;
+        index = hash%cms_size;
 
         let key  = Cms{
             row:i,
