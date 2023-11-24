@@ -191,7 +191,8 @@ async fn main() -> Result<(), anyhow::Error> {
         }
 
     }
-
+    
+    if min ==MAX{min = 0};
     print!("Il minimo è {}\n", min);
     
 
