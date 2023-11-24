@@ -26,7 +26,7 @@ const CMS_ROWS:u32 = 4;
 //static mut CMS_ROWS:u32 = 1;
 
 #[derive(Clone, Copy)]
-struct cms {
+struct Cms {
     row: u32,
     index: u32
 }
@@ -47,7 +47,7 @@ static METADATA: Array::<u32> = Array::<u32>::with_max_entries(10, 0);
 
 #[map]
 //(row,index) = value both row and index are user definable, the map can have a max of 1024 rows
-static CMS_MAP: PerCpuHashMap::<cms,u32> = PerCpuHashMap::<cms,u32>::with_max_entries(CMS_SIZE, 0);
+static CMS_MAP: PerCpuHashMap::<Cms,u32> = PerCpuHashMap::<Cms,u32>::with_max_entries(CMS_SIZE, 0);
 
 #[map]
 static CONVERTED_KEY: PerCpuArray::<[u8;13]> = PerCpuArray::<[u8;13]>::with_max_entries(1, 0);
@@ -188,18 +188,7 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         }
         index = hash%CMS_SIZE;
 
-        // if let Some(arr) = CMS_MAP.get_ptr_mut(&i) {
-        //     unsafe {(*arr).row[index as usize] += 1}
-        //     info!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, unsafe{(*arr).row[index as usize]} )
-        // }else {
-        //     //stack limit exceeded
-        //     // let mut riga  = CmsRow{row :[0;CMS_SIZE as usize]};
-        //     // riga.row[index as usize]=1;
-        //     // CMS_MAP.insert(&i, &riga, 0);
-        //     info!(&ctx,"Else CMS_MAP");
-        // }
-
-        let key  = cms{
+        let key  = Cms{
             row:i,
             index:index
         };

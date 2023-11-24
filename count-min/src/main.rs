@@ -22,11 +22,11 @@ const CMS_SIZE:u32 = 1024;
 const CMS_ROWS:u32 = 4;
 //ci sarebbe la macro in aya::bpf
 #[derive(Clone, Copy,Default)]
-struct cms{
+struct Cms{
     row : u32,
     index: u32
 }
-unsafe impl  Pod for cms{}
+unsafe impl  Pod for Cms{}
 
 
 #[derive(Clone, Copy,Default)]
@@ -38,6 +38,29 @@ pub struct Pacchetto{
     proto:u8
 }
 unsafe impl Pod for Pacchetto{}
+
+fn convert_key_tuple_to_array(key_tuple: (u32, u32, u16, u16, u8)) -> [u8; 13] {
+    let mut arr = [0; 13];
+    // src IP
+    arr[0] = (key_tuple.0 & 0xFF) as u8;
+    arr[1] = (key_tuple.0 >> 8 & 0xFF) as u8;
+    arr[2] = (key_tuple.0 >> 16 & 0xFF) as u8;
+    arr[3] = (key_tuple.0 >> 24 & 0xFF) as u8;
+    // dst IP
+    arr[4] = (key_tuple.1 & 0xFF) as u8;
+    arr[5] = (key_tuple.1 >> 8 & 0xFF) as u8;
+    arr[6] = (key_tuple.1 >> 16 & 0xFF) as u8;
+    arr[7] = (key_tuple.1 >> 24 & 0xFF) as u8;
+    // src port
+    arr[8] = (key_tuple.2 & 0xFF) as u8;
+    arr[9] = (key_tuple.2 >> 8 & 0xFF) as u8;
+    // dst port
+    arr[10] = (key_tuple.3  & 0xFF) as u8;
+    arr[11] = (key_tuple.3 >> 8 & 0xFF) as u8;
+    // proto
+    arr[12] = key_tuple.4;
+    return arr;
+ } 
 
 
 #[tokio::main]
@@ -86,8 +109,6 @@ async fn main() -> Result<(), anyhow::Error> {
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
 
-    //allcms = collection of cmss from each core
-    //let allcms = cms_array.get(&0, 0)?;//index 0 flag 0
 
     //legge ultimo pkt convertito da convert_key_tuple_to_array
     let converted_key_arr: PerCpuArray<_,[u8;13]> = PerCpuArray::try_from(bpf.map_mut("CONVERTED_KEY").unwrap())?;
@@ -115,8 +136,19 @@ async fn main() -> Result<(), anyhow::Error> {
     print!("Pacchetto : ");
     print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
 
+    //o usa l'ultimo pacchetto o un pacchetto passato manualmente
+    //pacchetto passato manualmente
+    
+    // /////////let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
+    // let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(203, 178, 142, 200).into(),Ipv4Addr::new(172, 25, 153, 123).into(),80,60972,6);
+    // let converted_key = convert_key_tuple_to_array(key_ip);
+    // print!("\n");
+    // print!("Pacchetto : ");
+    // print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", key_ip.0, key_ip.2, key_ip.4, key_ip.1, key_ip.3);
+
+
     //mappa kernel row [CMS_SIZE]
-    let mut cms_map: PerCpuHashMap<_, cms, u32> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+    let mut cms_map: PerCpuHashMap<_, Cms, u32> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
 
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
@@ -131,14 +163,14 @@ async fn main() -> Result<(), anyhow::Error> {
         print!("Row = {} Hash = {} Index = {}\n", i, hash,index);
 
         //let mut thread = 0;
-        let key  = cms{
+        let key  = Cms{
             row:i,
             index:index
         };
         let val = cms_map.get(&key,0)?;
 
         for cpu_cms in val.iter(){
-            
+
             if *cpu_cms < min && *cpu_cms != 0{
                 min = *cpu_cms;
             }
@@ -147,7 +179,7 @@ async fn main() -> Result<(), anyhow::Error> {
         }
 
     }
-
+    if min ==MAX{min = 0};
     print!("Il minimo è {}\n", min);
     
 
