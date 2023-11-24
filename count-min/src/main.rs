@@ -20,12 +20,13 @@ struct Opt {
 }
 const CMS_SIZE:u32 = 1024;
 const CMS_ROWS:u32 = 4;
-#[derive(Clone, Copy)]
-struct CmsRow {
-    row: [u32; CMS_SIZE as usize],
-}
 //ci sarebbe la macro in aya::bpf
-unsafe impl Pod for CmsRow{}
+#[derive(Clone, Copy,Default)]
+struct cms{
+    row : u32,
+    index: u32
+}
+unsafe impl  Pod for cms{}
 
 
 #[derive(Clone, Copy,Default)]
@@ -82,20 +83,6 @@ async fn main() -> Result<(), anyhow::Error> {
     let  mut metadata: Array<_,u32> = Array::try_from(bpf.map_mut("METADATA").unwrap())?;
     metadata.set(0,CMS_ROWS,0)?;
 
-    //mappa kernel row [CMS_SIZE]
-    let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
-    //cms_map.insert()
-    //o inizializzo le righe lato user o lato kernel
-    //for loop i in rows
-    for i in 0..CMS_ROWS{
-        let _=cms_map.insert(
-            i,
-            // PerCpuValues::try_from(CmsRow{row:[0;CMS_SIZE as usize]}),
-            PerCpuValues::try_from(vec![CmsRow{row:[0;CMS_SIZE as usize]};nr_cpus()?])?,
-            0
-        );
-    }
-
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
 
@@ -128,7 +115,8 @@ async fn main() -> Result<(), anyhow::Error> {
     print!("Pacchetto : ");
     print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
 
-    let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+    //mappa kernel row [CMS_SIZE]
+    let mut cms_map: PerCpuHashMap<_, cms, u32> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
 
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
@@ -143,15 +131,16 @@ async fn main() -> Result<(), anyhow::Error> {
         print!("Row = {} Hash = {} Index = {}\n", i, hash,index);
 
         //let mut thread = 0;
+        let key  = cms{
+            row:i,
+            index:index
+        };
+        let val = cms_map.get(&key,0)?;
 
-        let riga = cms_map.get(&i,0)?;
-
-        for cpu_cms in riga.iter(){
-            let val = cpu_cms.row[index as usize];
-            //println!("{}",val);
-            // let mut val = cpu_cms.row[i as usize][index as usize];
-            if val < min && val != 0{
-                min = val;
+        for cpu_cms in val.iter(){
+            
+            if *cpu_cms < min && *cpu_cms != 0{
+                min = *cpu_cms;
             }
             //println!("Thread n: {} value = {}",thread,val);
             //thread +=1;
