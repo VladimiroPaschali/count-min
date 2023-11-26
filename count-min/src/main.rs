@@ -1,7 +1,7 @@
 use anyhow::Context;
 use aya::maps::{PerCpuHashMap,PerCpuArray,Array, PerCpuValues};
 use aya::programs::{Xdp, XdpFlags};
-use aya::{include_bytes_aligned, Bpf, Pod};
+use aya::{include_bytes_aligned, Bpf, Pod, BpfLoader};
 use aya::util::nr_cpus;
 use aya_log::{BpfLogger, Ipv4Formatter};
 use clap::Parser;
@@ -17,9 +17,11 @@ use std::net::{Ipv4Addr, IpAddr};
 struct Opt {
     #[clap(short, long, default_value = "eth0")]
     iface: String,
+    #[clap(long, default_value = "5")]
+    cms_rows: u32,
+    #[clap(long, default_value = "1024")]
+    cms_size: u32,
 }
-const CMS_SIZE:u32 = 1024;
-const CMS_ROWS:u32 = 4;
 //ci sarebbe la macro in aya::bpf
 #[derive(Clone, Copy,Default)]
 struct Cms{
@@ -80,18 +82,23 @@ async fn main() -> Result<(), anyhow::Error> {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
 
+    let CMS_SIZE:u32 = opt.cms_size;
+    let CMS_ROWS:u32 = opt.cms_rows;
 
+    let mut bpf_loader = BpfLoader::new();
+    bpf_loader.set_global("CMS_SIZE", &CMS_SIZE, true);
+    bpf_loader.set_global("CMS_ROWS", &CMS_ROWS, true);
 
     // This will include your eBPF object file as raw bytes at compile-time and load it at
     // runtime. This approach is recommended for most real-world use cases. If you would
     // like to specify the eBPF program at runtime rather than at compile-time, you can
     // reach for `Bpf::load_file` instead.
     #[cfg(debug_assertions)]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
+    let mut bpf = bpf_loader.load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/debug/count-min"
     ))?;
     #[cfg(not(debug_assertions))]
-    let mut bpf = Bpf::load(include_bytes_aligned!(
+    let mut bpf = bpf_loader.load(include_bytes_aligned!(
         "../../target/bpfel-unknown-none/release/count-min"
     ))?;
     if let Err(e) = BpfLogger::init(&mut bpf) {
