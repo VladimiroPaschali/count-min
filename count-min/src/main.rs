@@ -140,7 +140,7 @@ async fn main() -> Result<(), anyhow::Error> {
     //pacchetto passato manualmente
     
     // /////////let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
-    // let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(203, 178, 142, 200).into(),Ipv4Addr::new(172, 25, 153, 123).into(),80,60972,6);
+    // let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(202, 148, 0, 244).into(),Ipv4Addr::new(13, 183, 43, 247).into(),64643,443,6);
     // let converted_key = convert_key_tuple_to_array(key_ip);
     // print!("\n");
     // print!("Pacchetto : ");
@@ -160,9 +160,9 @@ async fn main() -> Result<(), anyhow::Error> {
             hash = xxh32(&hash.to_ne_bytes(),42);
         }
         index = hash%CMS_SIZE;
-        print!("Row = {} Hash = {} Index = {}\n", i, hash,index);
 
-        //let mut thread = 0;
+        // let mut thread = 0;
+        let mut tot_row = 0;
         let key  = Cms{
             row:i,
             index:index
@@ -171,12 +171,19 @@ async fn main() -> Result<(), anyhow::Error> {
 
         for cpu_cms in val.iter(){
 
-            if *cpu_cms < min && *cpu_cms != 0{
-                min = *cpu_cms;
-            }
-            //println!("Thread n: {} value = {}",thread,val);
-            //thread +=1;
+            tot_row+=*cpu_cms;
+        
+            // println!("Thread n: {} value = {}",thread,cpu_cms);
+            // thread +=1;
+
         }
+
+        if tot_row < min && tot_row != 0{
+            min = tot_row;
+        }
+
+        print!("Row = {} Hash = {} Index = {} ValueRow = {}\n", i, hash,index, tot_row);
+
 
     }
     if min ==MAX{min = 0};
