@@ -1,5 +1,5 @@
 use anyhow::Context;
-use aya::maps::{PerCpuHashMap,PerCpuArray,Array, PerCpuValues};
+use aya::maps::{HashMap,PerCpuArray,Array, PerCpuValues};
 use aya::programs::{Xdp, XdpFlags};
 use aya::{include_bytes_aligned, Bpf, Pod, BpfLoader};
 use aya::util::nr_cpus;
@@ -19,7 +19,7 @@ struct Opt {
     iface: String,
     #[clap(long, default_value = "5")]
     cms_rows: u32,
-    #[clap(long, default_value = "1024")]
+    #[clap(long, default_value = "100000")]
     cms_size: u32,
 }
 //ci sarebbe la macro in aya::bpf
@@ -154,8 +154,8 @@ async fn main() -> Result<(), anyhow::Error> {
     // print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", key_ip.0, key_ip.2, key_ip.4, key_ip.1, key_ip.3);
 
 
-    //mappa kernel row [CMS_SIZE]
-    let mut cms_map: PerCpuHashMap<_, Cms, u32> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+    ////////mappa kernel row [CMS_SIZE]
+    let mut cms_map: HashMap<_, Cms, u32> = HashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
 
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
@@ -176,20 +176,20 @@ async fn main() -> Result<(), anyhow::Error> {
         };
         let val = cms_map.get(&key,0)?;
 
-        for cpu_cms in val.iter(){
+        // for cpu_cms in val.iter(){
 
-            tot_row+=*cpu_cms;
+        //     tot_row+=*cpu_cms;
         
-            // println!("Thread n: {} value = {}",thread,cpu_cms);
-            // thread +=1;
+        //     // println!("Thread n: {} value = {}",thread,cpu_cms);
+        //     // thread +=1;
 
+        // }
+
+        if val < min && val != 0{
+            min = val;
         }
 
-        if tot_row < min && tot_row != 0{
-            min = tot_row;
-        }
-
-        print!("Row = {} Hash = {} Index = {} ValueRow = {}\n", i, hash,index, tot_row);
+        print!("Row = {} Hash = {} Index = {} ValueRow = {}\n", i, hash,index, val);
 
 
     }

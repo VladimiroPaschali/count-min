@@ -3,7 +3,7 @@
 use aya_bpf::{
     bindings::{xdp_action, bpf_attach_type::BPF_MODIFY_RETURN},
     macros::{map,xdp},
-    maps::{PerCpuArray,PerCpuHashMap,Array},
+    maps::{PerCpuArray,HashMap,Array},
     programs::XdpContext,
     bpf_printk
 };
@@ -53,7 +53,7 @@ static METADATA: Array::<u32> = Array::<u32>::with_max_entries(10, 0);
 
 #[map]
 //(row,index) = value both row and index are user definable, the map can have a max of 1024 rows
-static CMS_MAP: PerCpuHashMap::<Cms,u32> = PerCpuHashMap::<Cms,u32>::with_max_entries(CMS_ENTRY_LIMIT, 0);
+static CMS_MAP: HashMap::<Cms,u32> = HashMap::<Cms,u32>::with_max_entries(CMS_ENTRY_LIMIT, 0);
 
 #[map]
 static CONVERTED_KEY: PerCpuArray::<[u8;13]> = PerCpuArray::<[u8;13]>::with_max_entries(1, 0);
