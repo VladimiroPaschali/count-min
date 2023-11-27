@@ -4,6 +4,7 @@ use aya_bpf::{
     bindings::xdp_action,
     macros::{map,xdp},
     maps::PerCpuArray,
+    maps::Array,
     programs::XdpContext,
     bpf_printk
 };
@@ -20,7 +21,7 @@ use network_types::{
 use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
 use xxhash_rust::xxh32::xxh32;
 
-const CMS_SIZE:u32 = 1024;
+const CMS_SIZE:u32 = 256;
 const CMS_ROWS:u32 = 4;
 #[derive(Clone, Copy)]
 pub struct Cms {
@@ -38,7 +39,7 @@ pub struct Pacchetto{
 }
 
 #[map]
-static CMS_ARRAY: PerCpuArray::<Cms> = PerCpuArray::<Cms>::with_max_entries(1, 0);
+static CMS_ARRAY: Array::<Cms> = Array::<Cms>::with_max_entries(1, 0);
 
 #[map]
 static CONVERTED_KEY: PerCpuArray::<[u8;13]> = PerCpuArray::<[u8;13]>::with_max_entries(1, 0);
