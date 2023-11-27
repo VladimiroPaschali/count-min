@@ -18,7 +18,7 @@ struct Opt {
     #[clap(short, long, default_value = "eth0")]
     iface: String,
 }
-const CMS_SIZE:u32 = 256;
+const CMS_SIZE:u32 = 131072;
 const CMS_ROWS:u32 = 4;
 #[derive(Clone, Copy)]
 pub struct Cms {
