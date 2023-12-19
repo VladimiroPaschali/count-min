@@ -1,5 +1,5 @@
 use anyhow::Context;
-use aya::maps::{PerCpuHashMap,PerCpuArray,Array, PerCpuValues};
+use aya::maps::{PerCpuHashMap,PerCpuArray,Array, PerCpuValues,HashMap};
 use aya::programs::{Xdp, XdpFlags};
 use aya::{include_bytes_aligned, Bpf, Pod};
 use aya::util::nr_cpus;
@@ -106,14 +106,14 @@ async fn main() -> Result<(), anyhow::Error> {
     metadata.set(0,CMS_ROWS,0)?;
 
     //mappa kernel row [CMS_SIZE]
-    let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+    let mut cms_map: HashMap<_, u32, CmsRow> = HashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
     //inizializzo le righe lato user
     //for loop i in rows
     for i in 0..CMS_ROWS{
         let _=cms_map.insert(
             i,
-            // PerCpuValues::try_from(CmsRow{row:[0;CMS_SIZE as usize]}),
-            PerCpuValues::try_from(vec![CmsRow{row:[0;CMS_SIZE as usize]};nr_cpus()?])?,
+            CmsRow{row:[0;CMS_SIZE as usize]},
+            //PerCpuValues::try_from(vec![CmsRow{row:[0;CMS_SIZE as usize]};nr_cpus()?])?,
             0
         );
     }
@@ -161,7 +161,7 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
 
-    let mut cms_map: PerCpuHashMap<_, u32, CmsRow> = PerCpuHashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+    let mut cms_map: HashMap<_, u32, CmsRow> = HashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
 
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
@@ -177,19 +177,20 @@ async fn main() -> Result<(), anyhow::Error> {
         //let mut thread = 0;
         let mut tot_row = 0;
         let riga = cms_map.get(&i,0)?;
+        let val = riga.row[index as usize];
 
-        for cpu_cms in riga.iter(){
-            let val = cpu_cms.row[index as usize];
-            tot_row+=val;
-            //println!("Thread n: {} value = {}",thread,val);
-            //thread +=1;
+        // for cpu_cms in riga.iter(){
+        //     let val = cpu_cms.row[index as usize];
+        //     tot_row+=val;
+        //     //println!("Thread n: {} value = {}",thread,val);
+        //     //thread +=1;
+        // }
+
+        if val < min && val != 0{
+            min = val;
         }
 
-        if tot_row < min && tot_row != 0{
-            min = tot_row;
-        }
-
-        print!("Row = {} Hash = {} Index = {} ValueRow = {}\n", i, hash,index, tot_row);
+        print!("Row = {} Hash = {} Index = {} ValueRow = {}\n", i, hash,index, val);
 
     }
     
