@@ -78,6 +78,12 @@ async fn main() -> Result<(), anyhow::Error> {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
 
+    //removes limit on stack size
+    let ret2 = unsafe { libc::setrlimit(libc::RLIMIT_STACK, &rlim) };
+    if ret2 != 0 {
+        debug!("remove limit on stack size failed, ret is: {}", ret);
+    }
+
     // This will include your eBPF object file as raw bytes at compile-time and load it at
     // runtime. This approach is recommended for most real-world use cases. If you would
     // like to specify the eBPF program at runtime rather than at compile-time, you can
