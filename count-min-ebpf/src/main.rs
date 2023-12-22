@@ -20,7 +20,7 @@ use network_types::{
 use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
 use xxhash_rust::xxh32::xxh32;
 
-const CMS_ENTRY_LIMIT: u32 =  100000;
+const CMS_ENTRY_LIMIT: u32 =  131072;
 
 //rows and size updated by userside
 #[no_mangle]
