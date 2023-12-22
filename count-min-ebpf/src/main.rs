@@ -20,10 +20,8 @@ use network_types::{
 use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
 use xxhash_rust::xxh32::xxh32;
 
-const CMS_SIZE:u32 = 1024;
-//const CMS_ROWS:u32 = 4;
-//updated from value from metadata[0] set in userside
-//static mut CMS_ROWS:u32 = 1;
+const CMS_SIZE:u32 = 131072;
+const CMS_ROWS:u32 = 6;
 
 #[derive(Clone, Copy)]
 struct CmsRow {
@@ -41,12 +39,8 @@ pub struct Pacchetto{
 }
 
 #[map]
-//metadata[0] = number of rows crated by user
-static METADATA: Array::<u32> = Array::<u32>::with_max_entries(10, 0);
-
-#[map]
 //the number of rows is user definable, the map can have a max of 1024 rows
-static CMS_MAP: HashMap::<u32,CmsRow> = HashMap::<u32,CmsRow>::with_max_entries(CMS_SIZE, 0);
+static CMS_MAP: Array::<CmsRow> = Array::<CmsRow>::with_max_entries(CMS_ROWS, 0);
 
 #[map]
 static CONVERTED_KEY: PerCpuArray::<[u8;13]> = PerCpuArray::<[u8;13]>::with_max_entries(1, 0);
@@ -174,36 +168,10 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         info!(&ctx,"Else ULTIMO_PKT");
     }
 
-    // let cms_rows: u32 = *METADATA.get(0).unwrap_or(&0);
-    // unsafe { CMS_ROWS = *METADATA.get(0).unwrap_or(&2) };
-
-    //non riesco a leggere metadata
-    let mut cms_rows: u32 = 4;
-
-    //let mut cms_rows = *METADATA.get(0).unwrap();
-    //cms_rows = cms_rows.get_or_insert(1);
-
-
-    // unsafe{bpf_printk!(b"cmsrows 1  %d" , cms_rows)};
-    // if cms_rows == 0{
-    //     cms_rows =1;
-    // }
-    // cms_rows =1;
-    // unsafe{bpf_printk!(b"cmsrows 2  %d" , cms_rows)};
-
-    // if let Some(cms_row) = METADATA.get_ptr(0){
-        
-    // }
-    // let cms_rows_p = METADATA.get_ptr(0);
-    // if cms_rows_p.is_some(){
-
-    // }
-
-
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
 
-    for i in 0..cms_rows {
+    for i in 0..CMS_ROWS {
         //info!(&ctx,"iiiiiiiiiii {}",i);
         if i == 0{
             hash = xxh32(&converted_key,42);
@@ -213,17 +181,12 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         }
         index = hash%CMS_SIZE;
 
-        if let Some(arr) = CMS_MAP.get_ptr_mut(&i) {
+        if let Some(arr) = CMS_MAP.get_ptr_mut(i) {
             unsafe {(*arr).row[index as usize] += 1}
             info!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, unsafe{(*arr).row[index as usize]} )
         }else {
-            //stack limit exceeded
-            // let mut riga  = CmsRow{row :[0;CMS_SIZE as usize]};
-            // riga.row[index as usize]=1;
-            // CMS_MAP.insert(&i, &riga, 0);
             info!(&ctx,"Else CMS_MAP");
         }
-
 
     }
 

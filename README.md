@@ -1,6 +1,6 @@
 # count-min
 
-Map of rows with fixed size
+Array of rows with fixed size
 
 ## Prerequisites
 

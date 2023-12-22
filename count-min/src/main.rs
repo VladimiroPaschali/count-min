@@ -18,8 +18,8 @@ struct Opt {
     #[clap(short, long, default_value = "eth0")]
     iface: String,
 }
-const CMS_SIZE:u32 = 1024;
-const CMS_ROWS:u32 = 4;
+const CMS_SIZE:u32 = 131072;
+const CMS_ROWS:u32 = 6;
 #[derive(Clone, Copy)]
 struct CmsRow {
     row: [u32; CMS_SIZE as usize],
@@ -75,11 +75,11 @@ async fn main() -> Result<(), anyhow::Error> {
         rlim_max: libc::RLIM_INFINITY,
     };
     let ret = unsafe { libc::setrlimit(libc::RLIMIT_MEMLOCK, &rlim) };
+    //no need to remove stack limit up to 131072x6
+    // let ret = unsafe { libc::setrlimit(libc::RLIMIT_STACK, &rlim) };
     if ret != 0 {
         debug!("remove limit on locked memory failed, ret is: {}", ret);
     }
-
-
 
     // This will include your eBPF object file as raw bytes at compile-time and load it at
     // runtime. This approach is recommended for most real-world use cases. If you would
@@ -101,22 +101,6 @@ async fn main() -> Result<(), anyhow::Error> {
     program.load()?;
     program.attach(&opt.iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
-
-    let  mut metadata: Array<_,u32> = Array::try_from(bpf.map_mut("METADATA").unwrap())?;
-    metadata.set(0,CMS_ROWS,0)?;
-
-    //mappa kernel row [CMS_SIZE]
-    let mut cms_map: HashMap<_, u32, CmsRow> = HashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
-    //inizializzo le righe lato user
-    //for loop i in rows
-    for i in 0..CMS_ROWS{
-        let _=cms_map.insert(
-            i,
-            CmsRow{row:[0;CMS_SIZE as usize]},
-            //PerCpuValues::try_from(vec![CmsRow{row:[0;CMS_SIZE as usize]};nr_cpus()?])?,
-            0
-        );
-    }
 
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
@@ -161,30 +145,23 @@ async fn main() -> Result<(), anyhow::Error> {
 
 
 
-    let mut cms_map: HashMap<_, u32, CmsRow> = HashMap::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
+    let mut cms_map: Array<_, CmsRow> = Array::try_from(bpf.map_mut("CMS_MAP").unwrap())?;
 
     let mut hash :u32 = 0;
     let mut index : u32 = 0;
     let mut min: u32 = MAX;
     for i in 0..CMS_ROWS{
+
         if i ==0{
             hash = xxh32(&converted_key,42);
         }else {
             hash = xxh32(&hash.to_ne_bytes(),42);
         }
-        index = hash%CMS_SIZE;
 
-        //let mut thread = 0;
+        index = hash%CMS_SIZE;
         let mut tot_row = 0;
         let riga = cms_map.get(&i,0)?;
         let val = riga.row[index as usize];
-
-        // for cpu_cms in riga.iter(){
-        //     let val = cpu_cms.row[index as usize];
-        //     tot_row+=val;
-        //     //println!("Thread n: {} value = {}",thread,val);
-        //     //thread +=1;
-        // }
 
         if val < min && val != 0{
             min = val;
