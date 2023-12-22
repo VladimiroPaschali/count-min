@@ -6,9 +6,9 @@ use aya_bpf::{
     maps::PerCpuArray,
     maps::Array,
     programs::XdpContext,
-    bpf_printk
+    bpf_printk, helpers::bpf_ktime_get_ns
 };
-use aya_log_ebpf::info;
+use aya_log_ebpf::{info, error};
 
 use core::{mem::{self, transmute}, u32, hash};
 use network_types::{
@@ -94,6 +94,7 @@ fn ptr_at<T>(ctx: &XdpContext, offset: usize) -> Result<*const T, ()> {
 }
 
 fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
+    let inizio = unsafe { bpf_ktime_get_ns() };
     //pointer to the beginning of the ethhdr
     //ctx pointer to the packet
     let ethhdr: *const EthHdr = ptr_at(&ctx, 0)?; 
@@ -184,7 +185,8 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
 
 
     }
-
+    let fine = unsafe { bpf_ktime_get_ns() };
+    error!(&ctx,"Inizio = {} Fine = {} TEMPO PACCHETTO = {} ns",inizio, fine, fine-inizio);
     Ok(xdp_action::XDP_PASS)
 }
 

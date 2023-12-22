@@ -126,31 +126,31 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     }
 
-    //legge l'ultimo pacchetto, probabilmente lo stesso ma salvato come struct Pacchetto
-    let ultimo_pkt: PerCpuArray<_,Pacchetto> = PerCpuArray::try_from(bpf.map_mut("ULTIMO_PKT").unwrap())?;
-    let ultimo_pkts = ultimo_pkt.get(&0, 0)?;
-    let mut pkt:Pacchetto = Default::default();
+    // //legge l'ultimo pacchetto, probabilmente lo stesso ma salvato come struct Pacchetto
+    // let ultimo_pkt: PerCpuArray<_,Pacchetto> = PerCpuArray::try_from(bpf.map_mut("ULTIMO_PKT").unwrap())?;
+    // let ultimo_pkts = ultimo_pkt.get(&0, 0)?;
+    // let mut pkt:Pacchetto = Default::default();
 
-    for cpu_pkt in ultimo_pkts.iter(){
-        if pkt.source_addr==0{
-            pkt = *cpu_pkt;
-        }
-    }
+    // for cpu_pkt in ultimo_pkts.iter(){
+    //     if pkt.source_addr==0{
+    //         pkt = *cpu_pkt;
+    //     }
+    // }
 
-    print!("\n");
-    print!("Pacchetto : ");
-    print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
+    // print!("\n");
+    // print!("Pacchetto : ");
+    // print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
 
     
     // o usa l'ultimo pacchetto o un pacchetto passato manualmente
     // pacchetto passato manualmente
     
-    // ///////let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
-    // let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(202, 148, 0, 244).into(),Ipv4Addr::new(13, 183, 43, 247).into(),64643,443,6);
-    // let converted_key = convert_key_tuple_to_array(key_ip);
-    // print!("\n");
-    // print!("Pacchetto : ");
-    // print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", key_ip.0, key_ip.2, key_ip.4, key_ip.1, key_ip.3);
+    ///////let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
+    let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(202, 148, 0, 244).into(),Ipv4Addr::new(13, 183, 43, 247).into(),64643,443,6);
+    let converted_key = convert_key_tuple_to_array(key_ip);
+    print!("\n");
+    print!("Pacchetto : ");
+    print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", key_ip.0, key_ip.2, key_ip.4, key_ip.1, key_ip.3);
 
 
 
