@@ -7,7 +7,7 @@ use aya_bpf::{
     programs::XdpContext,
     bpf_printk
 };
-use aya_log_ebpf::info;
+use aya_log_ebpf::{info, error};
 
 use core::{mem::{self, transmute}, u32, hash, slice::SliceIndex};
 use network_types::{
@@ -21,10 +21,8 @@ use xxhash_rust::const_xxh32::xxh32 as const_xxh32;
 use xxhash_rust::xxh32::xxh32;
 
 const CMS_ENTRY_LIMIT: u32 =  100000;
-//updated from value from metadata[0] set in userside
-//static mut CMS_ROWS:u32 = 1;
-//
 
+//rows and size updated by userside
 #[no_mangle]
 static CMS_ROWS: u32 = 1;
 
@@ -46,10 +44,6 @@ pub struct Pacchetto{
     dest_port:u16,
     proto:u8
 }
-
-#[map]
-//metadata[0] = number of rows crated by user
-static METADATA: Array::<u32> = Array::<u32>::with_max_entries(10, 0);
 
 #[map]
 //(row,index) = value both row and index are user definable, the map can have a max of 1024 rows
@@ -157,8 +151,8 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         _ => return Err(()),
     };
 
-    info!(&ctx, "CMS_ROWS: {} CMS_SIZE: {}", cms_rows, cms_size);
-   info!(&ctx, "SRC IP: {:i}, SRC PORT: {}, PROTO: {}, DST IP: {:i}, DST PORT : {}", source_addr, source_port, proto, dest_addr, dest_port);
+    // info!(&ctx, "CMS_ROWS: {} CMS_SIZE: {}", cms_rows, cms_size);
+    info!(&ctx, "SRC IP: {:i}, SRC PORT: {}, PROTO: {}, DST IP: {:i}, DST PORT : {}", source_addr, source_port, proto, dest_addr, dest_port);
 
     let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
     let converted_key = convert_key_tuple_to_array(key_ip);
@@ -188,7 +182,6 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
     let mut index : u32 = 0;
 
     for i in 0..cms_rows{
-        //info!(&ctx,"iiiiiiiiiii {}",i);
         if i == 0{
             hash = xxh32(&converted_key,42);
         }else {
@@ -205,12 +198,24 @@ fn try_count_min(ctx: XdpContext) -> Result<u32, ()> {
         if let Some(val)= unsafe { CMS_MAP.get(&key) }{
             
             CMS_MAP.insert(&key, &(val+1), 0);
-            info!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, *val)
+            info!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, *val);
+
+            if hash == 4269008113{
+                error!(&ctx, "Row = {} Hash = {} Index = {} Value = {} ", i, hash, index, *val);
+            }
 
         }else {
-            
+            // non capisco perchè value = cms rows, per ora sottraggo cmsrows alla fine lato user
             CMS_MAP.insert(&key, &1, 0);
-            info!(&ctx,"New packet, new (Row Hash) inserted");
+            info!(&ctx,"New packet, new hash = {} in Row = {}", hash,key.row);
+
+            // if let Some(val)= unsafe { CMS_MAP.get(&key) }{
+            // info!(&ctx,"check value hash = {} in Row = {} inserted with value {}", hash,key.row,*val);
+
+            // }else{
+            //     info!(&ctx,"ERRORE ELSE GET");
+            // }
+
 
         }
 

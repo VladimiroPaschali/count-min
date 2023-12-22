@@ -17,7 +17,7 @@ use std::net::{Ipv4Addr, IpAddr};
 struct Opt {
     #[clap(short, long, default_value = "eth0")]
     iface: String,
-    #[clap(long, default_value = "5")]
+    #[clap(long, default_value = "4")]
     cms_rows: u32,
     #[clap(long, default_value = "100000")]
     cms_size: u32,
@@ -110,9 +110,6 @@ async fn main() -> Result<(), anyhow::Error> {
     program.attach(&opt.iface, XdpFlags::default())
         .context("failed to attach the XDP program with default flags - try changing XdpFlags::default() to XdpFlags::SKB_MODE")?;
 
-    let  mut metadata: Array<_,u32> = Array::try_from(bpf.map_mut("METADATA").unwrap())?;
-    metadata.set(0,CMS_ROWS,0)?;
-
     info!("Waiting for Ctrl-C...");
     signal::ctrl_c().await?;
 
@@ -128,30 +125,30 @@ async fn main() -> Result<(), anyhow::Error> {
         }
     }
 
-    //legge l'ultimo pacchetto, probabilmente lo stesso ma salvato come struct Pacchetto
-    let ultimo_pkt: PerCpuArray<_,Pacchetto> = PerCpuArray::try_from(bpf.map_mut("ULTIMO_PKT").unwrap())?;
-    let ultimo_pkts = ultimo_pkt.get(&0, 0)?;
-    let mut pkt:Pacchetto = Default::default();
+    // //legge l'ultimo pacchetto, probabilmente lo stesso ma salvato come struct Pacchetto
+    // let ultimo_pkt: PerCpuArray<_,Pacchetto> = PerCpuArray::try_from(bpf.map_mut("ULTIMO_PKT").unwrap())?;
+    // let ultimo_pkts = ultimo_pkt.get(&0, 0)?;
+    // let mut pkt:Pacchetto = Default::default();
 
-    for cpu_pkt in ultimo_pkts.iter(){
-        if pkt.source_addr==0{
-            pkt = *cpu_pkt;
-        }
-    }
+    // for cpu_pkt in ultimo_pkts.iter(){
+    //     if pkt.source_addr==0{
+    //         pkt = *cpu_pkt;
+    //     }
+    // }
 
-    print!("\n");
-    print!("Pacchetto : ");
-    print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
+    // print!("\n");
+    // print!("Pacchetto : ");
+    // print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", Ipv4Addr::from(pkt.source_addr), pkt.source_port, pkt.proto, Ipv4Addr::from(pkt.dest_addr), pkt.dest_port);
 
     //o usa l'ultimo pacchetto o un pacchetto passato manualmente
     //pacchetto passato manualmente
     
-    // /////////let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
-    // let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(202, 148, 0, 244).into(),Ipv4Addr::new(13, 183, 43, 247).into(),64643,443,6);
-    // let converted_key = convert_key_tuple_to_array(key_ip);
-    // print!("\n");
-    // print!("Pacchetto : ");
-    // print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", key_ip.0, key_ip.2, key_ip.4, key_ip.1, key_ip.3);
+    /////////let key_ip: (u32, u32, u16, u16, u8) = (source_addr,dest_addr,source_port,dest_port,proto as u8);
+    let key_ip: (u32, u32, u16, u16, u8) = (Ipv4Addr::new(202, 148, 0, 244).into(),Ipv4Addr::new(13, 183, 43, 247).into(),64643,443,6);
+    let converted_key = convert_key_tuple_to_array(key_ip);
+    print!("\n");
+    print!("Pacchetto : ");
+    print!("SRC IP: {}, SRC PORT: {}, PROTO: {}, DST IP: {}, DST PORT : {}\n", key_ip.0, key_ip.2, key_ip.4, key_ip.1, key_ip.3);
 
 
     ////////mappa kernel row [CMS_SIZE]
@@ -168,22 +165,14 @@ async fn main() -> Result<(), anyhow::Error> {
         }
         index = hash%CMS_SIZE;
 
-        // let mut thread = 0;
         let mut tot_row = 0;
         let key  = Cms{
             row:i,
             index:index
         };
-        let val = cms_map.get(&key,0)?;
-
-        // for cpu_cms in val.iter(){
-
-        //     tot_row+=*cpu_cms;
-        
-        //     // println!("Thread n: {} value = {}",thread,cpu_cms);
-        //     // thread +=1;
-
-        // }
+        let mut val = cms_map.get(&key,0)?;
+        //problema con instert lato ebpf ogni volta che viene inserito il un nuovo pacchetto val = CMS_ROWS
+        val = val-CMS_ROWS+1;
 
         if val < min && val != 0{
             min = val;
